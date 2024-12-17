@@ -1,0 +1,13 @@
+
+target/
+dbt_modules/
+logs/
+**/.DS_Store
+venv*
+tutorial.duckdb
+.user.yml
+tmp*
+__pycache__
+*egg*
+dagster.yaml
+.env

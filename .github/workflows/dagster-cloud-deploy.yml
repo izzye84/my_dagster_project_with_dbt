@@ -1,0 +1,114 @@
+name: Dagster Cloud Hybrid Deployment
+on:
+  push: # For full deployments
+    branches:
+      - "main"
+      - "master"
+  pull_request:  # For branch deployments
+     types: [opened, synchronize, reopened, closed]
+
+concurrency:
+  # Cancel in-progress deploys to the same branch
+  group: ${{ github.ref }}
+  cancel-in-progress: true
+env:
+  # The organization name in Dagster Cloud
+  DAGSTER_CLOUD_ORGANIZATION: "izzy-hybrid-sandbox"
+  # The API token from https://dagster.cloud/ should be stored in Secrets
+  DAGSTER_CLOUD_API_TOKEN: ${{ secrets.DAGSTER_CLOUD_API_TOKEN }}
+  # Path to the root folder containing the dagster project
+  DAGSTER_PROJECT_DIR: "."
+  # Path to dagster_cloud.yaml relative to DAGSTER_PROJECT_DIR
+  DAGSTER_CLOUD_YAML_PATH: "dagster_cloud.yaml"
+  GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+  # SSH variables for authentication with the machine hosting the local agent
+  SSH_USER: ${{ secrets.SSH_USER }}
+  SSH_HOST: ${{ secrets.SSH_HOST }}
+  SERVER_IP: ${{ secrets.SERVER_IP }}
+  # Path to the root folder of the dagster project on the machine running the local agent
+  DAGSTER_PROJECT_PATH: ${{ secrets.DAGSTER_PROJECT_PATH }}
+
+jobs:
+  dagster-cloud-deploy:
+    runs-on: ubuntu-22.04
+    steps:
+      # Checkout the project
+      - name: Checkout
+        uses: actions/checkout@v3
+        if: steps.prerun.outputs.result != 'skip'
+        with:
+          ref: ${{ github.head_ref }}
+
+      # Validate dagster_cloud.yaml and the connection to dagster.cloud
+      - name: Validate configuration
+        id: ci-validate
+        if: steps.prerun.outputs.result != 'skip'
+        uses: dagster-io/dagster-cloud-action/actions/utils/dagster-cloud-cli@v0.1
+        with:
+          command: "ci check --project-dir ${{ env.DAGSTER_PROJECT_DIR }} --dagster-cloud-yaml-path ${{ env.DAGSTER_CLOUD_YAML_PATH }}"
+
+      # Optional — Use SSH to authenticate with the machine hosting the local agent
+      - name: Set up SSH
+        uses: webfactory/ssh-agent@v0.9.0
+        with:
+          ssh-private-key: ${{ secrets.SSH_PRIVATE_KEY }}
+
+      # Add known host to authenticate via SSH
+      - name: Add known host
+        run: |
+          mkdir -p ~/.ssh
+          ssh-keyscan -t ed25519 ${{ secrets.SSH_HOST }} >> ~/.ssh/known_hosts
+
+      # Set static venv variable in the format of venv_datetime
+      - name: Set static venv variable using datetime
+        run: echo "NEW_VENV=venv_$(date +'%Y%m%d_%H%M%S')" >> $GITHUB_ENV
+      
+      # Checkout main branch, pull latest changes, create new venv, and install latest deps
+      - name: Update Dagster project on the local server
+        run: |
+          ssh -vvv ${{ secrets.SSH_USER }}@${{ secrets.SSH_HOST }} '
+            cd ${{ secrets.DAGSTER_PROJECT_PATH }} && \
+
+            current_branch=$(git rev-parse --abbrev-ref HEAD) && \
+            if [ "$current_branch" != "main" ]; then
+              git checkout main
+            fi && \
+
+            git pull && \
+
+            python3 -m venv ${{ env.NEW_VENV }} && \
+
+            source ${{ env.NEW_VENV }}/bin/activate && \
+
+            pip install -e . && \
+
+            #TODO: confirm what venv represents in this context
+            ln -sfn ${{ env.NEW_VENV }} venv
+
+            #TODO: add description for what this does
+            ls -td venv* | tail -n +4 | xargs rm -rf
+          '
+
+      # run dbt deps and dbt parse to generate up to date manifest.json
+      - name: Update dbt manifest
+        run: |
+          ssh -vvv ${{ secrets.SSH_USER }}@${{ secrets.SSH_HOST }} '
+            cd ${{ secrets.DAGSTER_PROJECT_PATH }} && \
+            
+            source ${{ env.NEW_VENV }}/bin/activate && \
+
+            cd my_dbt_project && \
+            dbt deps && \
+            dbt parse
+          '
+
+      # Install Dagster Cloud CLI to push changes to Dagster+
+      - name: Install Dagster Cloud CLI
+        run: pip install dagster-cloud          
+
+      # Push changes to Dagster+
+      - name: Add or Update Dagster Cloud Code Location
+        run: |
+          dagster-cloud deployment sync-locations -w dagster_cloud.yaml \
+            --api-token ${{ secrets.DAGSTER_CLOUD_API_TOKEN }} \
+            --deployment "prod"
