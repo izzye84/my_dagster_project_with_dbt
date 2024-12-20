@@ -57,6 +57,24 @@ jobs:
       - name: Add known host
         run: |
           mkdir -p ~/.ssh
+
+          echo "Testing if host is reachable..."
+          nc -zv ${{ secrets.SSH_HOST }} 22 || echo "Port 22 not reachable"
+
+          echo "Attempting DNS resolution..."
+          nslookup ${{ secrets.SSH_HOST }} || echo "DNS resolution failed"
+
+          echo "Attempting key scan..."
+          ssh-keyscan -t ed25519 ${{ secrets.SSH_HOST }} 2>&1 | tee keyscan.log || echo "Keyscan failed"
+
+          if [ -s keyscan.log ]; then
+            cat keyscan.log >> ~/.ssh/known_hosts
+            echo "Successfully added host key"
+          else
+            echo "No keys were retrieved"
+            exit 1
+          fi
+
           ssh-keyscan -vvv -t ed25519 ${{ secrets.SSH_HOST }} >> ~/.ssh/known_hosts
 
       # Set static venv variable in the format of venv_datetime
