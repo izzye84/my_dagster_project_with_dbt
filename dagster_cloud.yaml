@@ -3,3 +3,4 @@ locations:
   code_source:
     module_name: my_dagster_code_location.definitions
   agent_queue: local-agent-queue
+  executable_path: /Users/izzy/src/my_dagster_project_with_dbt/venvs/current_venv/bin/python

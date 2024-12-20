@@ -76,16 +76,16 @@ jobs:
 
             git pull && \
 
-            python3 -m venv ${{ env.NEW_VENV }} && \
+            python3 -m venv venvs/${{ env.NEW_VENV }} && \
 
-            source ${{ env.NEW_VENV }}/bin/activate && \
+            source venvs/${{ env.NEW_VENV }}/bin/activate && \
 
             pip install -e . && \
 
-            #TODO: confirm what venv represents in this context
-            ln -sfn ${{ env.NEW_VENV }} venv
+            # Update symlink to point at the latest venv
+            ln -sfn ${{ env.NEW_VENV }} venvs/current_venv
 
-            #TODO: add description for what this does
+            # Keep the latest N venv's (this example keeps the last 3)
             ls -td venv* | tail -n +4 | xargs rm -rf
           '
 
@@ -95,7 +95,7 @@ jobs:
           ssh -vvv ${{ secrets.SSH_USER }}@${{ secrets.SSH_HOST }} '
             cd ${{ secrets.DAGSTER_PROJECT_PATH }} && \
             
-            source ${{ env.NEW_VENV }}/bin/activate && \
+            source venvs/${{ env.NEW_VENV }}/bin/activate && \
 
             cd my_dbt_project && \
             dbt deps && \
