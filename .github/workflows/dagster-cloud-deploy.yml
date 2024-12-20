@@ -66,41 +66,44 @@ jobs:
       # Checkout main branch, pull latest changes, create new venv, and install latest deps
       - name: Update Dagster project on the local server
         run: |
-          ssh -vvv ${{ secrets.SSH_USER }}@${{ secrets.SSH_HOST }} '
-            cd ${{ secrets.DAGSTER_PROJECT_PATH }} && \
+          ssh -vvv ${{ secrets.SSH_USER }}@${{ secrets.SSH_HOST }} bash << 'EOL'
+            cd ${{ secrets.DAGSTER_PROJECT_PATH }}
 
-            current_branch=$(git rev-parse --abbrev-ref HEAD) && \
+            # Check if we're on main branch and switch if needed
+            current_branch=$(git rev-parse --abbrev-ref HEAD)
             if [ "$current_branch" != "main" ]; then
               git checkout main
-            fi && \
+            fi
 
-            git pull && \
+            # Pull latest changes
+            git pull
 
-            python3 -m venv venvs/${{ env.NEW_VENV }} && \
+            # Create new virtual environment
+            python3 -m venv venvs/${{ env.NEW_VENV }}
 
-            source venvs/${{ env.NEW_VENV }}/bin/activate && \
+            # Activate new environment and install dependencies
+            source venvs/${{ env.NEW_VENV }}/bin/activate
+            pip install -e .
 
-            pip install -e . && \
-
-            # Update symlink to point at the latest venv
+            # Update symlink to point to the latest venv
             ln -sfn ${{ env.NEW_VENV }} venvs/current_venv
 
-            # Keep the latest N venv's (this example keeps the last 3)
-            ls -td venv* | tail -n +4 | xargs rm -rf
-          '
+            # Keep the latest 3 venvs
+            ls -td venvs/venv* | tail -n +4 | xargs rm -rf
+          EOL
 
-      # run dbt deps and dbt parse to generate up to date manifest.json
+      # run dbt deps and dbt parse to generate up-to-date manifest.json
       - name: Update dbt manifest
         run: |
-          ssh -vvv ${{ secrets.SSH_USER }}@${{ secrets.SSH_HOST }} '
-            cd ${{ secrets.DAGSTER_PROJECT_PATH }} && \
+          ssh -vvv ${{ secrets.SSH_USER }}@${{ secrets.SSH_HOST }} << 'EOL'
+            cd ${{ secrets.DAGSTER_PROJECT_PATH }}
             
-            source venvs/${{ env.NEW_VENV }}/bin/activate && \
+            source venvs/${{ env.NEW_VENV }}/bin/activate
 
-            cd my_dbt_project && \
-            dbt deps && \
+            cd my_dbt_project
+            dbt deps
             dbt parse
-          '
+          EOL
 
       # Install Dagster Cloud CLI to push changes to Dagster+
       - name: Install Dagster Cloud CLI
