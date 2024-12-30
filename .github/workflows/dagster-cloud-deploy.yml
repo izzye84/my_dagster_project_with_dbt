@@ -4,8 +4,6 @@ on:
     branches:
       - "main"
       - "master"
-  pull_request:  # For branch deployments
-     types: [opened, synchronize, reopened, closed]
 
 concurrency:
   # Cancel in-progress deploys to the same branch
@@ -24,7 +22,6 @@ env:
   # SSH variables for authentication with the machine hosting the local agent
   SSH_USER: ${{ secrets.SSH_USER }}
   SSH_HOST: ${{ secrets.SSH_HOST }}
-  SERVER_IP: ${{ secrets.SERVER_IP }}
   # Path to the root folder of the dagster project on the machine running the local agent
   DAGSTER_PROJECT_PATH: ${{ secrets.DAGSTER_PROJECT_PATH }}
 
@@ -56,26 +53,10 @@ jobs:
       # Add known host to authenticate via SSH
       - name: Add known host
         run: |
+          set -e  # Exit on any error
+          trap 'echo "Error: Failed during host key setup. Check if host is reachable and SSH is configured properly."' ERR
           mkdir -p ~/.ssh
-
-          echo "Testing if host is reachable..."
-          nc -zv ${{ secrets.SSH_HOST }} 22 || echo "Port 22 not reachable"
-
-          echo "Attempting DNS resolution..."
-          nslookup ${{ secrets.SSH_HOST }} || echo "DNS resolution failed"
-
-          echo "Attempting key scan..."
-          ssh-keyscan -t ed25519 ${{ secrets.SSH_HOST }} 2>&1 | tee keyscan.log || echo "Keyscan failed"
-
-          if [ -s keyscan.log ]; then
-            cat keyscan.log >> ~/.ssh/known_hosts
-            echo "Successfully added host key"
-          else
-            echo "No keys were retrieved"
-            exit 1
-          fi
-
-          ssh-keyscan -vvv -t ed25519 ${{ secrets.SSH_HOST }} >> ~/.ssh/known_hosts
+          ssh-keyscan -t ed25519 ${{ secrets.SSH_HOST }} >> ~/.ssh/known_hosts
 
       # Set static venv variable in the format of venv_datetime
       - name: Set static venv variable using datetime
@@ -84,7 +65,7 @@ jobs:
       # Checkout main branch, pull latest changes, create new venv, and install latest deps
       - name: Update Dagster project on the local server
         run: |
-          ssh -vvv ${{ secrets.SSH_USER }}@${{ secrets.SSH_HOST }} bash << 'EOL'
+          ssh ${{ secrets.SSH_USER }}@${{ secrets.SSH_HOST }} bash << 'EOL'
             cd ${{ secrets.DAGSTER_PROJECT_PATH }}
 
             # Check if we're on main branch and switch if needed
@@ -106,14 +87,14 @@ jobs:
             # Update symlink to point to the latest venv
             ln -sfn ${{ env.NEW_VENV }} venvs/current_venv
 
-            # Keep the latest 3 venvs
+            # Keep the latest 3 venvs — increase or decrease the `tail -n +4` value to include more or fewer venvs.
             ls -td venvs/venv* | tail -n +4 | xargs rm -rf
           EOL
 
       # run dbt deps and dbt parse to generate up-to-date manifest.json
       - name: Update dbt manifest
         run: |
-          ssh -vvv ${{ secrets.SSH_USER }}@${{ secrets.SSH_HOST }} << 'EOL'
+          ssh ${{ secrets.SSH_USER }}@${{ secrets.SSH_HOST }} << 'EOL'
             cd ${{ secrets.DAGSTER_PROJECT_PATH }}
             
             source venvs/${{ env.NEW_VENV }}/bin/activate

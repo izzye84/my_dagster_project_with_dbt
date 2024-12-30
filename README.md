@@ -1,4 +1,6 @@
-# Using dbt with Dagster's hybrid deployment
+# Using dbt with Dagster's local agent in a hybrid deployment
+
+## Add dbt to your Dagster project
 
 1. **Project Setup**
    - Copy your dbt project into the root of your Dagster repository
@@ -77,19 +79,65 @@
      )
      ```
 
-5. **Update GitHub Action**
-   - Add a "Prepare dbt project for deployment" step just before the "Build and upload Docker image" step:
-     ```yaml
-     - name: Prepare DBT project for deployment
-        run: |
-          python -m pip install pip --upgrade
-          pip install . --upgrade --upgrade-strategy eager                                            ## Install the Python dependencies from the setup.py file, ex: dbt-core and dbt-duckdb
-          dagster-dbt project prepare-and-package --file my_dagster_code_location/project.py          ## Replace with the project.py location in the Dagster project folder
-        shell: bash 
-     ```
-   - Note: You'll need to add dbt variables/secrets in GitHub that correspond to the environment variables in your `profiles.yml`
-     - These credentials are used to create the `manifest.json`
+## Configure SSH
 
-6. **Testing**
+The CI/CD example in this guide uses SSH authentication to interact with the remote machine hosting the local agent.
+
+1. **Create a new SSH key pair for GitHub Actions**
+   - Open the terminal and run the following bash command on the remote machine hosting the local agent:
+
+      ```bash
+      ssh-keygen -t ed25519 -C "github-actions" -f ~/.ssh/github_actions
+      ```
+     - When prompted for a passphrase, leave it empty for automated access.
+
+   -  Add the public key to authorized keys:
+
+      ```bash
+      cat ~/.ssh/github_actions.pub >> ~/.ssh/authorized_keys
+      ```
+   - Retrieve the private key — it will be saved as a GitHub repository secret in a subsequent step:
+
+      ```bash
+      cat ~/.ssh/github_actions
+      ```
+     - Be sure to copy the entire output (including the BEGIN and END lines)
+
+## Configure CI/CD
+
+Dagster's local agent is unique from the other hybrid agents in that user code does not need to be packaged into a Docker image—instead, we will use virtual environments to ensure dependency isolation between deployments.
+
+1. **Set up GitHub Actions workflow**
+   - Create a new file `dagster-cloud-deploy.yml` and save it under the `.github/workflows` directory (create the directory if it does not already exist)
+   - Copy the following GitHub Action template into the newly created `dagster-cloud-deploy.yml` file:
+
+     https://github.com/izzye84/my_dagster_project_with_dbt/blob/main/.github/workflows/dagster-cloud-deploy.yml
+    
+      - Be sure to update the `DAGSTER_CLOUD_ORGANIZATION` environment variable in the template to reflect your Dagster organization name.
+
+2. **Create GitHub repository secrets**
+   - Add the following secrets to your GitHub repository (Settings → Secrets and variables → Actions → New repository secret):
+     - `SSH_PRIVATE_KEY`: The private key generated in the SSH configuration step
+     - `SSH_HOST`: The hostname or IP address of your remote machine
+     - `SSH_USER`: The username on the remote machine
+     - `DAGSTER_PROJECT_PATH`: The directory on the remote machine where you keep your Dagster project; e.g., `path/to/my_dagster_project`
+
+3. **Add an `executable_path` to the `dagster_cloud.yaml`**
+   - Update your [`dagster_cloud.yaml`](https://docs.dagster.io/dagster-plus/managing-deployments/dagster-cloud-yaml#python-executable) with the following configuration, replacing `<absolute/path/to/my_dagster_project>` with the full path where your project is deployed on the remote machine:
+   
+     ```yaml
+     locations:
+     - location_name: my_dagster_code_location
+       code_source:
+         module_name: my_dagster_code_location.definitions
+       executable_path: <absolute/path/to/my_dagster_project>/venvs/current_venv/bin/python
+     ```
+   - For example, if your project is deployed to /home/user/my_dagster_project, your path would be:
+     ```yaml
+     executable_path: /home/user/my_dagster_project/venvs/current_venv/bin/python
+     ```
+       - Note: The virtual environment path (`venvs/current_venv`) is managed automatically by the GitHub Action and ensures the `executable_path` always points to the latest virtual environment.
+
+4. **Testing**
    - Test the dbt Core integration locally using `dagster dev`
    - If everything works as expected, open a Pull Request
