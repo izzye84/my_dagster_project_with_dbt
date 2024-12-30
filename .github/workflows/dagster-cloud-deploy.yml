@@ -63,7 +63,7 @@ jobs:
         run: echo "NEW_VENV=venv_$(date +'%Y%m%d_%H%M%S')" >> $GITHUB_ENV
       
       # Checkout main branch, pull latest changes, create new venv, and install latest deps
-      - name: Update Dagster project on the local server
+      - name: Update Dagster project on the remote machine
         run: |
           ssh ${{ secrets.SSH_USER }}@${{ secrets.SSH_HOST }} bash << 'EOL'
             cd ${{ secrets.DAGSTER_PROJECT_PATH }}
@@ -82,7 +82,8 @@ jobs:
 
             # Activate new environment and install dependencies
             source venvs/${{ env.NEW_VENV }}/bin/activate
-            pip install -e .
+            pip install --upgrade pip
+            pip install -e . --no-cache-dir
 
             # Update symlink to point to the latest venv
             ln -sfn ${{ env.NEW_VENV }} venvs/current_venv
