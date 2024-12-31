@@ -10,10 +10,16 @@ setup(
         ],
     },
     install_requires=[
+        "boto3",
         "dagster",
         "dagster-cloud",
         "dagster-dbt",
         "dbt-duckdb<1.9",
+        "matplotlib",
+        "pandas",
+        "textblob",
+        "tweepy",
+        "wordcloud",
     ],
     extras_require={
         "dev": [
