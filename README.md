@@ -138,6 +138,5 @@ Dagster's local agent is unique from the other hybrid agents in that user code d
      ```
        - Note: The virtual environment path (`venvs/current_venv`) is managed automatically by the GitHub Action and ensures the `executable_path` always points to the latest virtual environment.
 
-4. **Testing**
-   - Test the dbt Core integration locally using `dagster dev`
-   - If everything works as expected, open a Pull Request
+## Test your code
+   - Test the dbt Core integration locally by running `dagster dev`
